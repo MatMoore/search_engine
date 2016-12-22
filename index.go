@@ -9,7 +9,12 @@ const doc1 = "I did enact Julius Caesar: I was killed i’ the Capitol; Brutus k
 const doc2 = "So let it be with Caesar. The noble Brutus hath told you Caesar was ambitious:"
 
 type Index struct {
-	terms map[string][]string
+	terms map[string]TermInfo
+}
+
+type TermInfo struct {
+	documentFrequency int
+	postings          []string
 }
 
 func tokenise(text string) []string {
@@ -30,10 +35,17 @@ func uniq(docs []string) []string {
 }
 
 func (index Index) insertPosting(term string, docId string) {
-	existing := index.terms[term]
-	withDoc := append(existing, docId)
+	termInfo, ok := index.terms[term]
+	if !ok {
+		termInfo = TermInfo{}
+	}
+
+	withDoc := append(termInfo.postings, docId)
 	sort.Strings(withDoc)
-	index.terms[term] = uniq(withDoc)
+	termInfo.postings = uniq(withDoc)
+	termInfo.documentFrequency = len(termInfo.postings)
+
+	index.terms[term] = termInfo
 }
 
 func (index Index) Index(docId string, text string) {
@@ -44,13 +56,18 @@ func (index Index) Index(docId string, text string) {
 }
 
 func New() Index {
-	return Index{terms: make(map[string][]string)}
+	return Index{terms: make(map[string]TermInfo)}
 }
 
 func (index Index) Show() string {
 	var result string
-	for key, value := range index.terms {
-		result += fmt.Sprintf("%s -> %s\n", key, strings.Join(value, ", "))
+	for term, termInfo := range index.terms {
+		result += fmt.Sprintf(
+			"%s (%d) -> %s\n",
+			term,
+			termInfo.documentFrequency,
+			strings.Join(termInfo.postings, ", "),
+		)
 	}
 	return result
 }
