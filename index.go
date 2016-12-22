@@ -18,7 +18,8 @@ type TermInfo struct {
 }
 
 func tokenise(text string) []string {
-	return strings.Fields(text)
+	replacer := strings.NewReplacer(".", "", ",", "", ":", "", ";", "")
+	return strings.Fields(replacer.Replace(strings.ToLower(text)))
 }
 
 func uniq(docs []string) []string {
