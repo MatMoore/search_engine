@@ -16,11 +16,24 @@ func tokenise(text string) []string {
 	return strings.Fields(text)
 }
 
+func uniq(docs []string) []string {
+	result := make([]string, 0, len(docs))
+	var last string
+	for _, doc := range docs {
+		if doc != last {
+			result = append(result, doc)
+		}
+		last = doc
+	}
+
+	return result
+}
+
 func (index Index) insertPosting(term string, docId string) {
 	existing := index.terms[term]
 	withDoc := append(existing, docId)
 	sort.Strings(withDoc)
-	index.terms[term] = withDoc
+	index.terms[term] = uniq(withDoc)
 }
 
 func (index Index) Index(docId string, text string) {
