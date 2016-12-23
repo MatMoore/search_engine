@@ -35,6 +35,23 @@ func uniq(docs []string) []string {
 	return result
 }
 
+func intersect(posting1 []string, posting2 []string) []string {
+	var answer []string
+	for len(posting1) > 0 && len(posting2) > 0 {
+		if posting1[0] == posting2[0] {
+			answer = append(answer, posting1[0])
+			posting1 = posting1[1:]
+			posting2 = posting2[1:]
+		} else if posting1[0] < posting2[0] {
+			posting1 = posting1[1:]
+		} else {
+			posting2 = posting2[1:]
+		}
+	}
+
+	return answer
+}
+
 func (index Index) insertPosting(term string, docId string) {
 	termInfo, ok := index.terms[term]
 	if !ok {
