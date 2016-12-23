@@ -17,12 +17,26 @@ type TermInfo struct {
 	postings          []string
 }
 
+type TermInfos []TermInfo
+
 // A search term or operator
 type queryNode interface {
 }
 
 type andQuery struct {
 	operands []queryNode
+}
+
+func (slice TermInfos) Len() int {
+	return len(slice)
+}
+
+func (slice TermInfos) Less(i int, j int) bool {
+	return slice[i].documentFrequency < slice[j].documentFrequency
+}
+
+func (slice TermInfos) Swap(i int, j int) {
+	slice[i], slice[j] = slice[j], slice[i]
 }
 
 func tokenise(text string) []string {
@@ -58,6 +72,20 @@ func intersect(posting1 []string, posting2 []string) []string {
 	}
 
 	return answer
+}
+
+func intersectTermInfos(termInfos TermInfos) TermInfo {
+	sort.Sort(termInfos)
+	first := termInfos[0]
+	rest := termInfos[1:]
+	result := first.postings
+	for len(result) > 0 && len(rest) > 0 {
+		first = rest[0]
+		rest = rest[1:]
+		result = intersect(first.postings, result)
+	}
+
+	return TermInfo{postings: result, documentFrequency: len(result)}
 }
 
 func parseQuery(query string) queryNode {
@@ -111,6 +139,27 @@ func (index Index) Show() string {
 	return result
 }
 
+func (index Index) runQuery(query queryNode) TermInfo {
+	switch typedQuery := query.(type) {
+	case andQuery:
+		var termInfos TermInfos
+		for _, operand := range typedQuery.operands {
+			termInfos = append(termInfos, index.runQuery(operand))
+		}
+		return intersectTermInfos(termInfos)
+	case string:
+		return index.terms[typedQuery]
+	}
+
+	return TermInfo{}
+}
+
+func (index Index) Search(query string) []string {
+	parsedQuery := parseQuery(query)
+	result := index.runQuery(parsedQuery)
+	return result.postings
+}
+
 func showQuery(query queryNode, indent int) string {
 	var result string
 	indentStr := strings.Repeat("  ", indent)
@@ -140,5 +189,5 @@ func main() {
 	fmt.Print(index.Show())
 	fmt.Println("\nQuery:")
 	fmt.Print(showQuery(parseQuery("hello AND world"), 1))
-
+	fmt.Printf("Results: %#v\n", index.Search("julius AND caesar"))
 }
