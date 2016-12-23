@@ -17,6 +17,14 @@ type TermInfo struct {
 	postings          []string
 }
 
+// A search term or operator
+type queryNode interface {
+}
+
+type andQuery struct {
+	operands []queryNode
+}
+
 func tokenise(text string) []string {
 	replacer := strings.NewReplacer(".", "", ",", "", ":", "", ";", "")
 	return strings.Fields(replacer.Replace(strings.ToLower(text)))
@@ -50,6 +58,19 @@ func intersect(posting1 []string, posting2 []string) []string {
 	}
 
 	return answer
+}
+
+func parseQuery(query string) queryNode {
+	terms := strings.Split(query, " AND ")
+	if len(terms) > 1 {
+		query := andQuery{}
+		for _, term := range terms {
+			query.operands = append(query.operands, term)
+		}
+		return query
+	}
+
+	return query
 }
 
 func (index Index) insertPosting(term string, docId string) {
@@ -90,11 +111,34 @@ func (index Index) Show() string {
 	return result
 }
 
+func showQuery(query queryNode, indent int) string {
+	var result string
+	indentStr := strings.Repeat("  ", indent)
+
+	switch typedQuery := query.(type) {
+	case andQuery:
+		result += indentStr + "AND (\n"
+
+		for _, operand := range typedQuery.operands {
+			result += indentStr + showQuery(operand, indent+1)
+		}
+
+		result += indentStr + ")\n"
+	case string:
+		result += indentStr + fmt.Sprintf("Term \"%s\"\n", typedQuery)
+	}
+
+	return result
+}
+
 func main() {
 	index := New()
 	index.Index("doc1", doc1)
 	index.Index("doc2", doc2)
 	fmt.Println("WELCOME TO GOOGLE 2.0 🔍 ")
-	fmt.Println("------------------------")
+	fmt.Println("------------------------\n")
 	fmt.Print(index.Show())
+	fmt.Println("\nQuery:")
+	fmt.Print(showQuery(parseQuery("hello AND world"), 1))
+
 }
