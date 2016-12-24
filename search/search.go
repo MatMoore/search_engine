@@ -53,7 +53,36 @@ func union(termInfo1 TermInfo, termInfo2 TermInfo) TermInfo {
 	return result
 }
 
+func difference(include TermInfo, exclude TermInfo) TermInfo {
+	var result TermInfo
+	includePostings := include.postings
+	excludePostings := exclude.postings
+
+	for len(includePostings) > 0 && len(excludePostings) > 0 {
+		if includePostings[0] < excludePostings[0] {
+			result.postings = append(result.postings, includePostings[0])
+			includePostings = includePostings[1:]
+		} else if includePostings[0] == excludePostings[0] {
+			includePostings = includePostings[1:]
+			excludePostings = excludePostings[1:]
+		} else {
+			excludePostings = excludePostings[1:]
+		}
+	}
+
+	for _, docId := range includePostings {
+		result.postings = append(result.postings, docId)
+		result.documentFrequency += 1
+	}
+
+	return result
+}
+
 func unionTermInfos(termInfos TermInfos) TermInfo {
+	if len(termInfos) == 0 {
+		return TermInfo{}
+	}
+
 	first := termInfos[0]
 	rest := termInfos[1:]
 	result := first
@@ -67,6 +96,10 @@ func unionTermInfos(termInfos TermInfos) TermInfo {
 }
 
 func intersectTermInfos(termInfos TermInfos) TermInfo {
+	if len(termInfos) == 0 {
+		return TermInfo{}
+	}
+
 	// Process in increasing order of size to fetch
 	// the minimal number of documents.
 	sort.Sort(termInfos)
@@ -85,6 +118,16 @@ func intersectTermInfos(termInfos TermInfos) TermInfo {
 	return result
 }
 
+// TODO: this is probably not the best order of operations. I think we should
+// calculate the number of documents in each operand, regardless of whether
+// it's negated, and combine operands from smallest to largest, using intersect
+// or difference as appropriate.
+func intersectAndExcludeTermInfos(included TermInfos, excluded TermInfos) TermInfo {
+	allIncluded := intersectTermInfos(included)
+	allExcluded := intersectTermInfos(excluded)
+	return difference(allIncluded, allExcluded)
+}
+
 // TODO: it's inefficient to process the OR subqueries first, because we fetch
 // the maximum number of documents right away, even if they would be filtered out
 // by the ANDs.
@@ -98,22 +141,45 @@ func intersectTermInfos(termInfos TermInfos) TermInfo {
 func (index Index) runQuery(query parsing.QueryNode) TermInfo {
 	switch typedQuery := query.(type) {
 	case parsing.AndQuery:
-		var termInfos TermInfos
+		var includedTermInfos TermInfos
+		var excludedTermInfos TermInfos
+
+		// Process `foo AND NOT bar` subqueries in one step, to avoid fetching
+		// *everything* just to calculate an intermediate result
 		for _, operand := range typedQuery.Operands {
-			termInfos = append(termInfos, index.runQuery(operand))
+			switch typedSubQuery := operand.(type) {
+			case parsing.NotQuery:
+				excludedTermInfos = append(excludedTermInfos, index.runQuery(typedSubQuery.Operand))
+			case string:
+				includedTermInfos = append(includedTermInfos, index.runQuery(operand))
+			}
 		}
-		return intersectTermInfos(termInfos)
+
+		return intersectAndExcludeTermInfos(includedTermInfos, excludedTermInfos)
 	case parsing.OrQuery:
 		var termInfos TermInfos
 		for _, operand := range typedQuery.Operands {
 			termInfos = append(termInfos, index.runQuery(operand))
 		}
 		return unionTermInfos(termInfos)
+
+	case parsing.NotQuery:
+		return difference(index.all(), index.runQuery(typedQuery.Operand))
+
 	case string:
 		return index.terms[typedQuery]
 	}
 
 	return TermInfo{}
+}
+
+func (index Index) all() TermInfo {
+	var termInfos TermInfos
+	for _, termInfo := range index.terms {
+		termInfos = append(termInfos, termInfo)
+	}
+
+	return unionTermInfos(termInfos)
 }
 
 func (index Index) Search(query string) []string {
