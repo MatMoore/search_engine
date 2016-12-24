@@ -3,11 +3,14 @@ package search
 import "github.com/matmoore/search_engine/parsing"
 import "sort"
 
-func intersect(posting1 []string, posting2 []string) []string {
-	var answer []string
+func intersect(termInfo1 TermInfo, termInfo2 TermInfo) TermInfo {
+	var result TermInfo
+	posting1 := termInfo1.postings
+	posting2 := termInfo2.postings
+
 	for len(posting1) > 0 && len(posting2) > 0 {
 		if posting1[0] == posting2[0] {
-			answer = append(answer, posting1[0])
+			result.postings = append(result.postings, posting1[0])
 			posting1 = posting1[1:]
 			posting2 = posting2[1:]
 		} else if posting1[0] < posting2[0] {
@@ -15,33 +18,6 @@ func intersect(posting1 []string, posting2 []string) []string {
 		} else {
 			posting2 = posting2[1:]
 		}
-	}
-
-	return answer
-}
-
-func intersectTermInfos(termInfos TermInfos) TermInfo {
-	sort.Sort(termInfos)
-	first := termInfos[0]
-	rest := termInfos[1:]
-	result := first.postings
-	for len(result) > 0 && len(rest) > 0 {
-		first = rest[0]
-		rest = rest[1:]
-		result = intersect(first.postings, result)
-	}
-
-	return TermInfo{postings: result, documentFrequency: len(result)}
-}
-
-func mergeTermInfos(binaryOperation func(TermInfo, TermInfo) TermInfo, termInfos TermInfos) TermInfo {
-	first := termInfos[0]
-	rest := termInfos[1:]
-	result := first
-	for len(rest) > 0 {
-		first = rest[0]
-		rest = rest[1:]
-		result = binaryOperation(first, result)
 	}
 
 	return result
@@ -77,6 +53,38 @@ func union(termInfo1 TermInfo, termInfo2 TermInfo) TermInfo {
 	return result
 }
 
+func unionTermInfos(termInfos TermInfos) TermInfo {
+	first := termInfos[0]
+	rest := termInfos[1:]
+	result := first
+	for len(rest) > 0 {
+		first = rest[0]
+		rest = rest[1:]
+		result = union(first, result)
+	}
+
+	return result
+}
+
+func intersectTermInfos(termInfos TermInfos) TermInfo {
+	// Process in increasing order of size to fetch
+	// the minimal number of documents.
+	sort.Sort(termInfos)
+
+	first := termInfos[0]
+	rest := termInfos[1:]
+	result := first
+
+	// Short circuit if a subquery has zero results
+	for result.documentFrequency > 0 && len(rest) > 0 {
+		first = rest[0]
+		rest = rest[1:]
+		result = intersect(first, result)
+	}
+
+	return result
+}
+
 // TODO: it's inefficient to process the OR subqueries first, because we fetch
 // the maximum number of documents right away, even if they would be filtered out
 // by the ANDs.
@@ -100,7 +108,7 @@ func (index Index) runQuery(query parsing.QueryNode) TermInfo {
 		for _, operand := range typedQuery.Operands {
 			termInfos = append(termInfos, index.runQuery(operand))
 		}
-		return mergeTermInfos(union, termInfos)
+		return unionTermInfos(termInfos)
 	case string:
 		return index.terms[typedQuery]
 	}
