@@ -11,17 +11,35 @@ type AndQuery struct {
 	Operands []QueryNode
 }
 
+type OrQuery struct {
+	Operands []QueryNode
+}
+
+func parseDisjunction(subquery string) QueryNode {
+	terms := strings.Split(subquery, " OR ")
+	if len(terms) > 1 {
+		node := OrQuery{}
+		for _, term := range terms {
+			node.Operands = append(node.Operands, term)
+		}
+		return node
+	}
+
+	return subquery
+}
+
+// Queries are assumed to be written in disjunctive normal form (ANDs of ORs)
 func ParseQuery(query string) QueryNode {
 	terms := strings.Split(query, " AND ")
 	if len(terms) > 1 {
-		query := AndQuery{}
+		node := AndQuery{}
 		for _, term := range terms {
-			query.Operands = append(query.Operands, term)
+			node.Operands = append(node.Operands, parseDisjunction(term))
 		}
-		return query
+		return node
 	}
 
-	return query
+	return parseDisjunction(query)
 }
 
 func showQuery(query QueryNode, indent int) string {
@@ -32,6 +50,13 @@ func showQuery(query QueryNode, indent int) string {
 	case AndQuery:
 		result += indentStr + "AND (\n"
 
+		for _, operand := range typedQuery.Operands {
+			result += indentStr + showQuery(operand, indent+1)
+		}
+
+		result += indentStr + ")\n"
+	case OrQuery:
+		result += indentStr + "OR (\n"
 		for _, operand := range typedQuery.Operands {
 			result += indentStr + showQuery(operand, indent+1)
 		}
